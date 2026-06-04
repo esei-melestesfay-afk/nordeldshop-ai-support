@@ -188,9 +188,10 @@ AI-chatten på Nordeldshop
     msg.set_content(body)
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-            smtp.login(EMAIL_USER, EMAIL_PASSWORD)
-            smtp.send_message(msg)
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as smtp:
+    smtp.starttls()
+    smtp.login(EMAIL_USER, EMAIL_PASSWORD)
+    smtp.send_message(msg)
         return True, "Lead email sent."
     except Exception as e:
         return False, str(e)
