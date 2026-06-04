@@ -1,7 +1,6 @@
 import os
 import re
-import smtplib
-from email.message import EmailMessage
+import requests
 from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
 from anthropic import Anthropic
@@ -11,10 +10,7 @@ CORS(app)
 
 client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
-EMAIL_USER = os.environ.get("EMAIL_USER")
-EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
-LEAD_RECEIVER_EMAIL = os.environ.get("LEAD_RECEIVER_EMAIL")
-
+FORMSPREE_ENDPOINT = "https://formspree.io/f/xdavoqrn"
 
 SYSTEM_PROMPT = """
 You are a customer support assistant for Nordeldshop, a Swedish Shopify store.
@@ -46,7 +42,6 @@ Style rules:
 - Do not use too many emojis.
 """
 
-
 HTML = """
 <!DOCTYPE html>
 <html lang="sv">
@@ -66,6 +61,9 @@ HTML = """
             border-radius: 14px;
             padding: 20px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        h2 {
+            margin-top: 0;
         }
         #messages {
             min-height: 250px;
@@ -134,15 +132,12 @@ HTML = """
 </html>
 """
 
-
 def looks_like_email(text):
     return re.search(r"[\w\.-]+@[\w\.-]+\.\w+", text) is not None
-
 
 def extract_email(text):
     match = re.search(r"[\w\.-]+@[\w\.-]+\.\w+", text)
     return match.group(0) if match else None
-
 
 def looks_like_lead_request(text):
     text_lower = text.lower()
@@ -157,50 +152,35 @@ def looks_like_lead_request(text):
         "jag vill köpa",
         "hjälp mig",
         "mer info",
-        "information"
+        "information",
+        "kan någon kontakta",
+        "jag behöver hjälp",
+        "jag har en fråga innan köp"
     ]
     return any(word in text_lower for word in lead_words)
 
-
 def send_lead_email(customer_message, customer_email):
-    if not EMAIL_USER or not EMAIL_PASSWORD or not LEAD_RECEIVER_EMAIL:
-        return False, "Email settings are missing."
-
-    subject = "Ny lead från Nordeldshop AI-support"
-
-    body = f"""
-Ny lead från Nordeldshop AI-support
-
-Kundens meddelande:
-{customer_message}
-
-Kundens e-post:
-{customer_email}
-
-Källa:
-AI-chatten på Nordeldshop
-"""
-
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = EMAIL_USER
-    msg["To"] = LEAD_RECEIVER_EMAIL
-    msg.set_content(body)
+    lead_data = {
+        "subject": "Ny lead från Nordeldshop AI-support",
+        "email": customer_email,
+        "message": customer_message,
+        "source": "AI-chatten på Nordeldshop"
+    }
 
     try:
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as smtp:
-    smtp.starttls()
-    smtp.login(EMAIL_USER, EMAIL_PASSWORD)
-    smtp.send_message(msg)
-        return True, "Lead email sent."
+        response = requests.post(FORMSPREE_ENDPOINT, data=lead_data, timeout=10)
+
+        if response.status_code in [200, 201, 202]:
+            return True, "Lead sent to Formspree."
+        else:
+            return False, f"Formspree error: {response.status_code}"
+
     except Exception as e:
         return False, str(e)
-
 
 @app.route("/")
 def home():
     return render_template_string(HTML)
-
 
 @app.route("/ask", methods=["POST"])
 def ask():
@@ -236,7 +216,6 @@ def ask():
 
     answer = message.content[0].text
     return jsonify({"answer": answer})
-
 
 if __name__ == "__main__":
     app.run(debug=True)
