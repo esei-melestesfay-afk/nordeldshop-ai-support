@@ -138,6 +138,7 @@ def extract_email(text):
 
 def extract_name(text, email):
     name = text.replace(email, "").replace(",", "").strip()
+    name = name.replace("Namn:", "").replace("namn:", "").strip()
     if not name:
         return "Okänt namn"
     return name
@@ -158,12 +159,15 @@ def looks_like_lead_request(text):
         "information",
         "kan någon kontakta",
         "jag behöver hjälp",
-        "jag har en fråga innan köp"
+        "jag har en fråga innan köp",
+        "jag vill prata",
+        "kan ni höra av er"
     ]
     return any(word in text_lower for word in lead_words)
 
 def send_lead_to_google_sheets(customer_message, customer_email):
     if not LEAD_WEBHOOK_URL:
+        print("ERROR: Missing LEAD_WEBHOOK_URL")
         return False, "Missing LEAD_WEBHOOK_URL"
 
     customer_name = extract_name(customer_message, customer_email)
@@ -176,14 +180,26 @@ def send_lead_to_google_sheets(customer_message, customer_email):
     }
 
     try:
-        response = requests.post(LEAD_WEBHOOK_URL, json=lead_data, timeout=15)
+        response = requests.post(
+            LEAD_WEBHOOK_URL,
+            json=lead_data,
+            timeout=20,
+            allow_redirects=True
+        )
+
+        print("GOOGLE SHEETS STATUS:", response.status_code)
+        print("GOOGLE SHEETS RESPONSE:", response.text[:500])
 
         if response.status_code in [200, 201, 202, 302]:
             return True, "Lead sent to Google Sheets."
-        else:
-            return False, f"Google Sheets webhook error: {response.status_code}"
+
+        if "success" in response.text.lower() or "true" in response.text.lower():
+            return True, "Lead sent to Google Sheets."
+
+        return False, f"Google Sheets webhook error: {response.status_code} - {response.text[:200]}"
 
     except Exception as e:
+        print("GOOGLE SHEETS ERROR:", str(e))
         return False, str(e)
 
 @app.route("/")
@@ -198,6 +214,8 @@ def ask():
     if looks_like_email(question):
         customer_email = extract_email(question)
         success, result = send_lead_to_google_sheets(question, customer_email)
+
+        print("LEAD RESULT:", result)
 
         if success:
             return jsonify({
