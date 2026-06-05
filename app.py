@@ -9,9 +9,11 @@ app = Flask(__name__)
 CORS(app)
 
 client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-LEAD_WEBHOOK_URL = os.environ.get("LEAD_WEBHOOK_URL")
 
-SYSTEM_PROMPT = """
+LEAD_WEBHOOK_URL = os.environ.get("LEAD_WEBHOOK_URL")
+STAFF_PASSWORD = os.environ.get("STAFF_PASSWORD", "nordeld2026")
+
+CUSTOMER_SYSTEM_PROMPT = """
 You are a customer support assistant for Nordeldshop, a Swedish Shopify store.
 
 Your job:
@@ -41,7 +43,44 @@ Style rules:
 - Do not use too many emojis.
 """
 
-HTML = """
+STAFF_SYSTEM_PROMPT = """
+You are Nordeldshop's internal AI assistant for staff.
+
+Your job is to help the business owner and staff work faster and smarter.
+
+You can help with:
+- Summarizing customer messages and leads.
+- Deciding if a lead is hot, warm, or cold.
+- Writing professional Swedish replies to customers.
+- Suggesting the next best action.
+- Improving customer support answers.
+- Turning messy customer messages into clear tasks.
+- Helping with sales, support, follow-up, and e-commerce communication.
+
+Important rules:
+- Always answer in Swedish.
+- Be practical, clear, and business-focused.
+- Do not invent facts about the store.
+- If information is missing, say what is missing.
+- Give useful output that staff can copy and use.
+- Keep the tone professional but simple.
+
+When analyzing a lead, use this structure:
+
+1. Typ av ärende:
+2. Prioritet:
+3. Kort sammanfattning:
+4. Vad kunden vill:
+5. Rekommenderat nästa steg:
+6. Förslag på svar till kunden:
+
+Lead priority:
+- Het lead = customer wants to buy now or wants direct contact.
+- Varm lead = customer is interested but needs more information.
+- Kall lead = general question, unclear interest, or low buying intent.
+"""
+
+CUSTOMER_HTML = """
 <!DOCTYPE html>
 <html lang="sv">
 <head>
@@ -129,6 +168,224 @@ HTML = """
 </html>
 """
 
+STAFF_HTML = """
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <title>Nordeldshop Personal-AI</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #0f1115;
+            color: #111;
+        }
+
+        .page {
+            min-height: 100vh;
+            padding: 40px 18px;
+            background:
+                radial-gradient(circle at top left, rgba(255,255,255,0.14), transparent 30%),
+                linear-gradient(135deg, #111827, #050505);
+        }
+
+        .dashboard {
+            max-width: 950px;
+            margin: auto;
+            background: #ffffff;
+            border-radius: 22px;
+            overflow: hidden;
+            box-shadow: 0 25px 80px rgba(0,0,0,0.35);
+        }
+
+        .header {
+            padding: 28px;
+            background: #111;
+            color: white;
+        }
+
+        .header h1 {
+            margin: 0 0 8px;
+            font-size: 28px;
+        }
+
+        .header p {
+            margin: 0;
+            color: #d1d5db;
+            line-height: 1.5;
+        }
+
+        .content {
+            padding: 24px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+            margin-bottom: 18px;
+        }
+
+        .card {
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 16px;
+            background: #fafafa;
+        }
+
+        .card h3 {
+            margin: 0 0 8px;
+            font-size: 16px;
+        }
+
+        .card p {
+            margin: 0;
+            color: #555;
+            font-size: 14px;
+            line-height: 1.45;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        input, textarea {
+            width: 100%;
+            box-sizing: border-box;
+            border: 1px solid #d1d5db;
+            border-radius: 14px;
+            padding: 14px;
+            font-size: 15px;
+            font-family: Arial, sans-serif;
+            outline: none;
+        }
+
+        textarea {
+            min-height: 180px;
+            resize: vertical;
+            margin-bottom: 14px;
+        }
+
+        input {
+            margin-bottom: 14px;
+        }
+
+        button {
+            background: #111;
+            color: white;
+            border: none;
+            border-radius: 14px;
+            padding: 14px 20px;
+            font-size: 15px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        .output {
+            margin-top: 20px;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 16px;
+            padding: 18px;
+            min-height: 120px;
+            white-space: pre-wrap;
+            line-height: 1.6;
+        }
+
+        .small {
+            color: #666;
+            font-size: 13px;
+            margin-top: 10px;
+        }
+
+        @media (max-width: 750px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            .header h1 {
+                font-size: 23px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="dashboard">
+            <div class="header">
+                <h1>Nordeldshop Personal-AI</h1>
+                <p>Privat AI-assistent för leads, kundsvar, support och försäljning.</p>
+            </div>
+
+            <div class="content">
+                <div class="grid">
+                    <div class="card">
+                        <h3>Analysera leads</h3>
+                        <p>Klistra in en kunds meddelande och få prioritet, sammanfattning och nästa steg.</p>
+                    </div>
+                    <div class="card">
+                        <h3>Skriv kundsvar</h3>
+                        <p>Få ett professionellt svenskt svar som du kan kopiera till mejl eller support.</p>
+                    </div>
+                </div>
+
+                <label>Lösenord</label>
+                <input id="password" type="password" placeholder="Skriv personal-lösenord..." />
+
+                <label>Vad vill du att AI:n ska hjälpa dig med?</label>
+                <textarea id="staffQuestion" placeholder="Exempel: Analysera denna lead och skriv ett svar: Sara, sara@gmail.com, jag vill köpa men undrar leveranstiden."></textarea>
+
+                <button onclick="askStaffAI()">Analysera med AI</button>
+
+                <div class="small">
+                    Tips: Klistra in kundens fråga, lead-information eller ett mejl du vill svara på.
+                </div>
+
+                <div id="staffOutput" class="output">AI-svaret visas här...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function askStaffAI() {
+            const password = document.getElementById("password").value;
+            const question = document.getElementById("staffQuestion").value;
+            const output = document.getElementById("staffOutput");
+
+            if (!password.trim() || !question.trim()) {
+                output.textContent = "Skriv både lösenord och fråga först.";
+                return;
+            }
+
+            output.textContent = "AI analyserar...";
+
+            try {
+                const response = await fetch("/staff-ask", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        password: password,
+                        question: question
+                    })
+                });
+
+                const data = await response.json();
+                output.textContent = data.answer;
+            } catch (error) {
+                output.textContent = "Något gick fel. Försök igen.";
+            }
+        }
+    </script>
+</body>
+</html>
+"""
+
 def looks_like_email(text):
     return re.search(r"[\w\.-]+@[\w\.-]+\.\w+", text) is not None
 
@@ -209,7 +466,11 @@ def send_lead_to_google_sheets(customer_message, customer_email):
 
 @app.route("/")
 def home():
-    return render_template_string(HTML)
+    return render_template_string(CUSTOMER_HTML)
+
+@app.route("/staff")
+def staff():
+    return render_template_string(STAFF_HTML)
 
 @app.route("/ask", methods=["POST"])
 def ask():
@@ -239,7 +500,30 @@ def ask():
     message = client.messages.create(
         model="claude-sonnet-4-5",
         max_tokens=300,
-        system=SYSTEM_PROMPT,
+        system=CUSTOMER_SYSTEM_PROMPT,
+        messages=[
+            {"role": "user", "content": question}
+        ]
+    )
+
+    answer = message.content[0].text
+    return jsonify({"answer": answer})
+
+@app.route("/staff-ask", methods=["POST"])
+def staff_ask():
+    data = request.get_json()
+    password = data.get("password", "")
+    question = data.get("question", "")
+
+    if password != STAFF_PASSWORD:
+        return jsonify({
+            "answer": "Fel lösenord. Du har inte åtkomst till personal-AI:n."
+        })
+
+    message = client.messages.create(
+        model="claude-sonnet-4-5",
+        max_tokens=700,
+        system=STAFF_SYSTEM_PROMPT,
         messages=[
             {"role": "user", "content": question}
         ]
