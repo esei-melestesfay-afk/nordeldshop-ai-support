@@ -137,10 +137,15 @@ def extract_email(text):
     return match.group(0) if match else None
 
 def extract_name(text, email):
-    name = text.replace(email, "").replace(",", "").strip()
-    name = name.replace("Namn:", "").replace("namn:", "").strip()
+    name = text.replace(email, "")
+    name = name.replace(",", "")
+    name = name.replace("Namn:", "")
+    name = name.replace("namn:", "")
+    name = name.strip()
+
     if not name:
         return "Okänt namn"
+
     return name
 
 def looks_like_lead_request(text):
@@ -182,7 +187,7 @@ def send_lead_to_google_sheets(customer_message, customer_email):
     try:
         response = requests.post(
             LEAD_WEBHOOK_URL,
-            json=lead_data,
+            data=lead_data,
             timeout=20,
             allow_redirects=True
         )
