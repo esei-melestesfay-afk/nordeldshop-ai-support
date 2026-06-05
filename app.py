@@ -9,8 +9,7 @@ app = Flask(__name__)
 CORS(app)
 
 client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-
-FORMSPREE_ENDPOINT = "https://formspree.io/f/xdavoqrn"
+LEAD_WEBHOOK_URL = os.environ.get("LEAD_WEBHOOK_URL")
 
 SYSTEM_PROMPT = """
 You are a customer support assistant for Nordeldshop, a Swedish Shopify store.
@@ -62,9 +61,7 @@ HTML = """
             padding: 20px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.1);
         }
-        h2 {
-            margin-top: 0;
-        }
+        h2 { margin-top: 0; }
         #messages {
             min-height: 250px;
             border: 1px solid #ddd;
@@ -139,6 +136,12 @@ def extract_email(text):
     match = re.search(r"[\w\.-]+@[\w\.-]+\.\w+", text)
     return match.group(0) if match else None
 
+def extract_name(text, email):
+    name = text.replace(email, "").replace(",", "").strip()
+    if not name:
+        return "Okänt namn"
+    return name
+
 def looks_like_lead_request(text):
     text_lower = text.lower()
     lead_words = [
@@ -159,21 +162,26 @@ def looks_like_lead_request(text):
     ]
     return any(word in text_lower for word in lead_words)
 
-def send_lead_email(customer_message, customer_email):
+def send_lead_to_google_sheets(customer_message, customer_email):
+    if not LEAD_WEBHOOK_URL:
+        return False, "Missing LEAD_WEBHOOK_URL"
+
+    customer_name = extract_name(customer_message, customer_email)
+
     lead_data = {
-        "subject": "Ny lead från Nordeldshop AI-support",
+        "name": customer_name,
         "email": customer_email,
         "message": customer_message,
         "source": "AI-chatten på Nordeldshop"
     }
 
     try:
-        response = requests.post(FORMSPREE_ENDPOINT, data=lead_data, timeout=10)
+        response = requests.post(LEAD_WEBHOOK_URL, json=lead_data, timeout=15)
 
-        if response.status_code in [200, 201, 202]:
-            return True, "Lead sent to Formspree."
+        if response.status_code in [200, 201, 202, 302]:
+            return True, "Lead sent to Google Sheets."
         else:
-            return False, f"Formspree error: {response.status_code}"
+            return False, f"Google Sheets webhook error: {response.status_code}"
 
     except Exception as e:
         return False, str(e)
@@ -189,7 +197,7 @@ def ask():
 
     if looks_like_email(question):
         customer_email = extract_email(question)
-        success, result = send_lead_email(question, customer_email)
+        success, result = send_lead_to_google_sheets(question, customer_email)
 
         if success:
             return jsonify({
@@ -197,7 +205,7 @@ def ask():
             })
         else:
             return jsonify({
-                "answer": "Jag kunde inte skicka uppgifterna just nu. Kontakta gärna supporten direkt."
+                "answer": "Jag kunde inte spara uppgifterna just nu. Kontakta gärna supporten direkt."
             })
 
     if looks_like_lead_request(question):
