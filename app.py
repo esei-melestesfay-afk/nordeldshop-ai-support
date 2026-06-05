@@ -13,6 +13,7 @@ client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 LEAD_WEBHOOK_URL = os.environ.get("LEAD_WEBHOOK_URL")
 STAFF_PASSWORD = os.environ.get("STAFF_PASSWORD", "nordeld2026")
 
+
 CUSTOMER_SYSTEM_PROMPT = """
 You are a customer support assistant for Nordeldshop, a Swedish Shopify store.
 
@@ -43,19 +44,20 @@ Style rules:
 - Do not use too many emojis.
 """
 
-STAFF_SYSTEM_PROMPT = """
-You are Nordeldshop's internal AI assistant for staff.
 
-Your job is to help the business owner and staff work faster and smarter.
+STAFF_SYSTEM_PROMPT = """
+You are Nordeldshop's internal AI business assistant for staff.
+
+Your job is to help the business owner and staff work faster, smarter, and more professionally.
 
 You can help with:
 - Summarizing customer messages and leads.
-- Deciding if a lead is hot, warm, or cold.
+- Deciding if a customer is a hot sales lead, warm lead, cold lead, support case, or complaint.
 - Writing professional Swedish replies to customers.
 - Suggesting the next best action.
 - Improving customer support answers.
 - Turning messy customer messages into clear tasks.
-- Helping with sales, support, follow-up, and e-commerce communication.
+- Helping with sales, support, follow-up, e-commerce communication, and customer retention.
 
 Important rules:
 - Always answer in Swedish.
@@ -64,8 +66,12 @@ Important rules:
 - If information is missing, say what is missing.
 - Give useful output that staff can copy and use.
 - Keep the tone professional but simple.
+- If it is a complaint or broken product issue, do NOT call it a hot lead. Call it "Hög prioritet – reklamation/support".
+- If the customer wants to buy now, call it "Het säljlead".
+- If the customer is interested but unsure, call it "Varm lead".
+- If it is only a general question, call it "Kall lead" or "Vanligt supportärende".
 
-When analyzing a lead, use this structure:
+Use this structure when useful:
 
 1. Typ av ärende:
 2. Prioritet:
@@ -74,11 +80,9 @@ When analyzing a lead, use this structure:
 5. Rekommenderat nästa steg:
 6. Förslag på svar till kunden:
 
-Lead priority:
-- Het lead = customer wants to buy now or wants direct contact.
-- Varm lead = customer is interested but needs more information.
-- Kall lead = general question, unclear interest, or low buying intent.
+Make the final customer reply clean, friendly, and ready to copy.
 """
+
 
 CUSTOMER_HTML = """
 <!DOCTYPE html>
@@ -151,7 +155,7 @@ CUSTOMER_HTML = """
 
             if (!question.trim()) return;
 
-            messages.innerHTML += `<div class="user">Du: ${question}</div>`;
+            messages.innerHTML += '<div class="user">Du: ' + question + '</div>';
             input.value = "";
 
             const response = await fetch("/ask", {
@@ -161,237 +165,789 @@ CUSTOMER_HTML = """
             });
 
             const data = await response.json();
-            messages.innerHTML += `<div class="bot">Support: ${data.answer}</div>`;
+            messages.innerHTML += '<div class="bot">Support: ' + data.answer + '</div>';
         }
     </script>
 </body>
 </html>
 """
+
 
 STAFF_HTML = """
 <!DOCTYPE html>
 <html lang="sv">
 <head>
     <meta charset="UTF-8">
-    <title>Nordeldshop Personal-AI</title>
+    <title>Nordeldshop Command Center</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg: #060816;
+            --panel: rgba(15, 23, 42, 0.78);
+            --panel2: rgba(255, 255, 255, 0.075);
+            --line: rgba(255,255,255,0.12);
+            --text: #f8fafc;
+            --muted: #9ca3af;
+            --blue: #3b82f6;
+            --purple: #8b5cf6;
+            --green: #22c55e;
+            --orange: #f59e0b;
+            --red: #ef4444;
+        }
+
         body {
             margin: 0;
             font-family: Arial, sans-serif;
-            background: #0f1115;
-            color: #111;
+            background: var(--bg);
+            color: var(--text);
         }
 
         .page {
             min-height: 100vh;
-            padding: 40px 18px;
+            padding: 26px;
             background:
-                radial-gradient(circle at top left, rgba(255,255,255,0.14), transparent 30%),
-                linear-gradient(135deg, #111827, #050505);
+                radial-gradient(circle at 12% 8%, rgba(59, 130, 246, 0.35), transparent 28%),
+                radial-gradient(circle at 88% 18%, rgba(139, 92, 246, 0.35), transparent 30%),
+                radial-gradient(circle at 50% 95%, rgba(34, 197, 94, 0.16), transparent 30%),
+                linear-gradient(135deg, #060816, #101827 60%, #030712);
         }
 
-        .dashboard {
-            max-width: 950px;
-            margin: auto;
-            background: #ffffff;
-            border-radius: 22px;
-            overflow: hidden;
-            box-shadow: 0 25px 80px rgba(0,0,0,0.35);
+        .shell {
+            max-width: 1220px;
+            margin: 0 auto;
         }
 
-        .header {
-            padding: 28px;
-            background: #111;
-            color: white;
-        }
-
-        .header h1 {
-            margin: 0 0 8px;
-            font-size: 28px;
-        }
-
-        .header p {
-            margin: 0;
-            color: #d1d5db;
-            line-height: 1.5;
-        }
-
-        .content {
-            padding: 24px;
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             gap: 18px;
+            margin-bottom: 22px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .logo {
+            width: 52px;
+            height: 52px;
+            border-radius: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            box-shadow: 0 16px 45px rgba(59,130,246,0.36);
+            font-size: 25px;
+        }
+
+        .brand h1 {
+            margin: 0;
+            font-size: 22px;
+            letter-spacing: -0.5px;
+        }
+
+        .brand p {
+            margin: 4px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .status-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 13px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid var(--line);
+            color: #dbeafe;
+            font-size: 13px;
+            backdrop-filter: blur(14px);
+        }
+
+        .dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: var(--green);
+            box-shadow: 0 0 20px var(--green);
+        }
+
+        .login-wrap {
+            max-width: 500px;
+            margin: 75px auto 0;
+        }
+
+        .login-card, .panel, .stat-card {
+            background: var(--panel);
+            border: 1px solid var(--line);
+            box-shadow: 0 30px 100px rgba(0,0,0,0.46);
+            backdrop-filter: blur(22px);
+        }
+
+        .login-card {
+            border-radius: 30px;
+            padding: 32px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .login-card:before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(59,130,246,0.18), rgba(139,92,246,0.14), transparent);
+            pointer-events: none;
+        }
+
+        .login-inner {
+            position: relative;
+        }
+
+        .lock-icon {
+            width: 58px;
+            height: 58px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,0.09);
+            border: 1px solid var(--line);
+            font-size: 28px;
             margin-bottom: 18px;
         }
 
-        .card {
-            border: 1px solid #e5e7eb;
-            border-radius: 16px;
-            padding: 16px;
-            background: #fafafa;
+        .login-card h2 {
+            margin: 0 0 10px;
+            font-size: 31px;
+            letter-spacing: -0.9px;
         }
 
-        .card h3 {
-            margin: 0 0 8px;
-            font-size: 16px;
-        }
-
-        .card p {
-            margin: 0;
-            color: #555;
-            font-size: 14px;
-            line-height: 1.45;
+        .login-card p {
+            margin: 0 0 24px;
+            color: #b8c1d6;
+            line-height: 1.55;
         }
 
         label {
             display: block;
-            font-weight: bold;
             margin-bottom: 8px;
+            font-size: 14px;
+            font-weight: 800;
+            color: #e5e7eb;
         }
 
-        input, textarea {
+        .input, .textarea {
             width: 100%;
-            box-sizing: border-box;
-            border: 1px solid #d1d5db;
-            border-radius: 14px;
-            padding: 14px;
-            font-size: 15px;
-            font-family: Arial, sans-serif;
-            outline: none;
-        }
-
-        textarea {
-            min-height: 180px;
-            resize: vertical;
-            margin-bottom: 14px;
-        }
-
-        input {
-            margin-bottom: 14px;
-        }
-
-        button {
-            background: #111;
+            border: 1px solid rgba(255,255,255,0.13);
+            background: rgba(255,255,255,0.08);
             color: white;
+            border-radius: 17px;
+            padding: 15px 16px;
+            font-size: 15px;
+            outline: none;
+            transition: 0.18s;
+        }
+
+        .input:focus, .textarea:focus {
+            border-color: #60a5fa;
+            box-shadow: 0 0 0 4px rgba(96,165,250,0.16);
+        }
+
+        .input::placeholder, .textarea::placeholder {
+            color: #7b8497;
+        }
+
+        .btn {
             border: none;
-            border-radius: 14px;
-            padding: 14px 20px;
+            border-radius: 17px;
+            padding: 15px 18px;
+            background: linear-gradient(135deg, #2563eb, #7c3aed);
+            color: white;
+            font-weight: 900;
             font-size: 15px;
             cursor: pointer;
-            font-weight: bold;
+            transition: 0.18s;
+            box-shadow: 0 16px 42px rgba(37,99,235,0.34);
         }
 
-        button:hover {
-            opacity: 0.9;
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 20px 48px rgba(124,58,237,0.43);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.13);
+            box-shadow: none;
+        }
+
+        .btn-green {
+            background: linear-gradient(135deg, #16a34a, #22c55e);
+            box-shadow: 0 16px 42px rgba(34,197,94,0.25);
+        }
+
+        .login-btn {
+            width: 100%;
+            margin-top: 14px;
+        }
+
+        .error {
+            min-height: 20px;
+            color: #fecaca;
+            font-size: 14px;
+            margin-top: 12px;
+        }
+
+        .dashboard {
+            display: none;
+            animation: fadeIn 0.35s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: none; }
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+            margin-bottom: 18px;
+        }
+
+        .stat-card {
+            border-radius: 22px;
+            padding: 18px;
+        }
+
+        .stat-card .icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,0.09);
+            border: 1px solid var(--line);
+            margin-bottom: 14px;
+            font-size: 20px;
+        }
+
+        .stat-card h3 {
+            margin: 0;
+            font-size: 21px;
+        }
+
+        .stat-card p {
+            margin: 5px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 18px;
+        }
+
+        .panel {
+            border-radius: 30px;
+            overflow: hidden;
+        }
+
+        .panel-head {
+            padding: 22px 24px;
+            border-bottom: 1px solid var(--line);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .panel-head h2 {
+            margin: 0;
+            font-size: 25px;
+            letter-spacing: -0.7px;
+        }
+
+        .panel-head p {
+            margin: 5px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .panel-body {
+            padding: 24px;
+        }
+
+        .textarea {
+            min-height: 240px;
+            resize: vertical;
+            line-height: 1.55;
+        }
+
+        .actions {
+            display: flex;
+            gap: 11px;
+            flex-wrap: wrap;
+            margin-top: 14px;
         }
 
         .output {
-            margin-top: 20px;
-            background: #f9fafb;
-            border: 1px solid #e5e7eb;
-            border-radius: 16px;
-            padding: 18px;
-            min-height: 120px;
+            margin-top: 18px;
+            min-height: 250px;
+            background: rgba(2,6,23,0.72);
+            border: 1px solid rgba(255,255,255,0.10);
+            border-radius: 23px;
+            padding: 20px;
+            color: #e5e7eb;
             white-space: pre-wrap;
-            line-height: 1.6;
+            line-height: 1.65;
+            font-size: 15px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .output.loading:before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+            animation: shimmer 1.3s infinite;
+        }
+
+        @keyframes shimmer {
+            from { transform: translateX(-100%); }
+            to { transform: translateX(100%); }
+        }
+
+        .side {
+            display: grid;
+            gap: 18px;
+        }
+
+        .feature-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .feature {
+            display: flex;
+            gap: 12px;
+            padding: 15px;
+            border-radius: 20px;
+            background: rgba(255,255,255,0.07);
+            border: 1px solid rgba(255,255,255,0.10);
+        }
+
+        .feature .ficon {
+            width: 42px;
+            height: 42px;
+            border-radius: 15px;
+            flex: 0 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, rgba(59,130,246,0.35), rgba(139,92,246,0.35));
+            font-size: 20px;
+        }
+
+        .feature h3 {
+            margin: 0 0 5px;
+            font-size: 15px;
+        }
+
+        .feature p {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.4;
+            font-size: 13px;
+        }
+
+        .prompt-list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .prompt {
+            text-align: left;
+            width: 100%;
+            border: 1px solid rgba(255,255,255,0.10);
+            background: rgba(255,255,255,0.06);
+            color: #dbeafe;
+            border-radius: 16px;
+            padding: 13px;
+            cursor: pointer;
+            line-height: 1.35;
+            font-size: 13px;
+            transition: 0.16s;
+        }
+
+        .prompt:hover {
+            background: rgba(59,130,246,0.16);
+            border-color: rgba(96,165,250,0.35);
+        }
+
+        .toast {
+            position: fixed;
+            right: 22px;
+            bottom: 22px;
+            background: rgba(15,23,42,0.92);
+            border: 1px solid var(--line);
+            color: white;
+            padding: 13px 16px;
+            border-radius: 16px;
+            box-shadow: 0 18px 55px rgba(0,0,0,0.35);
+            display: none;
+            z-index: 99;
         }
 
         .small {
-            color: #666;
+            color: var(--muted);
             font-size: 13px;
-            margin-top: 10px;
+            line-height: 1.5;
+            margin-top: 12px;
         }
 
-        @media (max-width: 750px) {
-            .grid {
+        @media (max-width: 980px) {
+            .stats {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .main-grid {
                 grid-template-columns: 1fr;
             }
-            .header h1 {
-                font-size: 23px;
+        }
+
+        @media (max-width: 620px) {
+            .page {
+                padding: 16px;
+            }
+
+            .topbar {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .status-row {
+                width: 100%;
+            }
+
+            .stats {
+                grid-template-columns: 1fr;
+            }
+
+            .panel-head {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .login-card {
+                padding: 24px;
+                border-radius: 24px;
+            }
+
+            .login-card h2 {
+                font-size: 26px;
             }
         }
     </style>
 </head>
+
 <body>
     <div class="page">
-        <div class="dashboard">
-            <div class="header">
-                <h1>Nordeldshop Personal-AI</h1>
-                <p>Privat AI-assistent för leads, kundsvar, support och försäljning.</p>
+        <div class="shell">
+            <div class="topbar">
+                <div class="brand">
+                    <div class="logo">⚡</div>
+                    <div>
+                        <h1>Nordeldshop Command Center</h1>
+                        <p>AI-dashboard för support, leads och kundsvar</p>
+                    </div>
+                </div>
+
+                <div class="status-row">
+                    <div class="pill"><span class="dot"></span> System online</div>
+                    <div class="pill">🔒 Privat personalyta</div>
+                </div>
             </div>
 
-            <div class="content">
-                <div class="grid">
-                    <div class="card">
-                        <h3>Analysera leads</h3>
-                        <p>Klistra in en kunds meddelande och få prioritet, sammanfattning och nästa steg.</p>
+            <div id="loginCard" class="login-wrap">
+                <div class="login-card">
+                    <div class="login-inner">
+                        <div class="lock-icon">🔐</div>
+                        <h2>Personalåtkomst</h2>
+                        <p>Logga in för att öppna Nordeldshops interna AI-assistent. Här kan du analysera leads, skriva kundsvar och få rekommenderade nästa steg.</p>
+
+                        <label>Lösenord</label>
+                        <input id="loginPassword" class="input" type="password" placeholder="Skriv personal-lösenord..." />
+
+                        <button class="btn login-btn" onclick="unlockDashboard()">Öppna Command Center</button>
+                        <div id="loginError" class="error"></div>
                     </div>
-                    <div class="card">
-                        <h3>Skriv kundsvar</h3>
-                        <p>Få ett professionellt svenskt svar som du kan kopiera till mejl eller support.</p>
+                </div>
+            </div>
+
+            <div id="dashboard" class="dashboard">
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="icon">🔥</div>
+                        <h3>Leadanalys</h3>
+                        <p>Hitta heta, varma och kalla leads.</p>
+                    </div>
+                    <div class="stat-card">
+                        <div class="icon">✉️</div>
+                        <h3>Kundsvar</h3>
+                        <p>Skriv färdiga svar på svenska.</p>
+                    </div>
+                    <div class="stat-card">
+                        <div class="icon">🧠</div>
+                        <h3>AI-stöd</h3>
+                        <p>Sammanfatta och strukturera ärenden.</p>
+                    </div>
+                    <div class="stat-card">
+                        <div class="icon">⚙️</div>
+                        <h3>Nästa steg</h3>
+                        <p>Få tydliga actions för varje kund.</p>
                     </div>
                 </div>
 
-                <label>Lösenord</label>
-                <input id="password" type="password" placeholder="Skriv personal-lösenord..." />
+                <div class="main-grid">
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <h2>AI-assistent</h2>
+                                <p>Klistra in kundtext, lead, mejl eller supportärende.</p>
+                            </div>
+                            <div class="pill">✨ Claude API</div>
+                        </div>
 
-                <label>Vad vill du att AI:n ska hjälpa dig med?</label>
-                <textarea id="staffQuestion" placeholder="Exempel: Analysera denna lead och skriv ett svar: Sara, sara@gmail.com, jag vill köpa men undrar leveranstiden."></textarea>
+                        <div class="panel-body">
+                            <label>Kundmeddelande eller uppgift</label>
+                            <textarea id="staffQuestion" class="textarea" placeholder="Exempel:
+Analysera denna lead och skriv ett svar:
+Sara, sara@gmail.com
+Jag vill köpa men undrar hur lång leveransen är."></textarea>
 
-                <button onclick="askStaffAI()">Analysera med AI</button>
+                            <div class="actions">
+                                <button class="btn" onclick="askStaffAI()">Analysera med AI</button>
+                                <button class="btn btn-green" onclick="copyOutput()">Kopiera svar</button>
+                                <button class="btn btn-secondary" onclick="clearAll()">Rensa</button>
+                            </div>
 
-                <div class="small">
-                    Tips: Klistra in kundens fråga, lead-information eller ett mejl du vill svara på.
+                            <div id="staffOutput" class="output">AI-svaret visas här...</div>
+                            <div class="small">Tips: Använd snabbkommandon till höger för att få rätt typ av AI-svar direkt.</div>
+                        </div>
+                    </div>
+
+                    <div class="side">
+                        <div class="panel">
+                            <div class="panel-head">
+                                <div>
+                                    <h2>Funktioner</h2>
+                                    <p>Byggt för praktisk kundsupport.</p>
+                                </div>
+                            </div>
+
+                            <div class="panel-body">
+                                <div class="feature-list">
+                                    <div class="feature">
+                                        <div class="ficon">📌</div>
+                                        <div>
+                                            <h3>Prioritering</h3>
+                                            <p>AI:n avgör om ärendet är sälj, support, reklamation eller låg prioritet.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="feature">
+                                        <div class="ficon">💬</div>
+                                        <div>
+                                            <h3>Färdiga svar</h3>
+                                            <p>Du får ett professionellt svar som kan kopieras direkt till kunden.</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="feature">
+                                        <div class="ficon">🚀</div>
+                                        <div>
+                                            <h3>Nästa steg</h3>
+                                            <p>AI:n berättar vad du bör göra: svara, be om ordernummer, bild eller följa upp.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="panel">
+                            <div class="panel-head">
+                                <div>
+                                    <h2>Snabbkommandon</h2>
+                                    <p>Klicka och fyll på med kundens text.</p>
+                                </div>
+                            </div>
+
+                            <div class="panel-body">
+                                <div class="prompt-list">
+                                    <button class="prompt" onclick="setPrompt('Analysera denna lead och skriv ett professionellt svar:\\n')">🔥 Analysera lead + skriv svar</button>
+                                    <button class="prompt" onclick="setPrompt('Skriv ett lugnt och professionellt svar till en missnöjd kund:\\n')">🛡️ Svara missnöjd kund</button>
+                                    <button class="prompt" onclick="setPrompt('Sammanfatta detta kundmeddelande och ge nästa steg:\\n')">🧠 Sammanfatta ärende</button>
+                                    <button class="prompt" onclick="setPrompt('Förbättra detta kundsvar så det låter professionellt men enkelt:\\n')">✨ Förbättra kundsvar</button>
+                                    <button class="prompt" onclick="setPrompt('Skriv ett uppföljningsmejl till denna kund:\\n')">📩 Skriv uppföljningsmejl</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-
-                <div id="staffOutput" class="output">AI-svaret visas här...</div>
             </div>
         </div>
+
+        <div id="toast" class="toast">Kopierat!</div>
     </div>
 
     <script>
+        let savedPassword = "";
+
+        function showToast(text) {
+            const toast = document.getElementById("toast");
+            toast.textContent = text;
+            toast.style.display = "block";
+            setTimeout(function() {
+                toast.style.display = "none";
+            }, 1800);
+        }
+
+        async function unlockDashboard() {
+            const password = document.getElementById("loginPassword").value;
+            const error = document.getElementById("loginError");
+
+            if (!password.trim()) {
+                error.textContent = "Skriv lösenord först.";
+                return;
+            }
+
+            error.textContent = "Kontrollerar lösenord...";
+
+            try {
+                const response = await fetch("/staff-login", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({password: password})
+                });
+
+                const data = await response.json();
+
+                if (!data.success) {
+                    error.textContent = "Fel lösenord. Försök igen.";
+                    return;
+                }
+
+                savedPassword = password;
+                sessionStorage.setItem("staffPassword", password);
+
+                document.getElementById("loginCard").style.display = "none";
+                document.getElementById("dashboard").style.display = "block";
+                showToast("Välkommen till Command Center");
+            } catch (err) {
+                error.textContent = "Något gick fel. Försök igen.";
+            }
+        }
+
+        function setPrompt(text) {
+            const textarea = document.getElementById("staffQuestion");
+            textarea.value = text;
+            textarea.focus();
+        }
+
         async function askStaffAI() {
-            const password = document.getElementById("password").value;
             const question = document.getElementById("staffQuestion").value;
             const output = document.getElementById("staffOutput");
 
-            if (!password.trim() || !question.trim()) {
+            if (!savedPassword.trim() || !question.trim()) {
                 output.textContent = "Skriv både lösenord och fråga först.";
                 return;
             }
 
-            output.textContent = "AI analyserar...";
+            output.classList.add("loading");
+            output.textContent = "AI analyserar ärendet...";
 
             try {
                 const response = await fetch("/staff-ask", {
                     method: "POST",
                     headers: {"Content-Type": "application/json"},
                     body: JSON.stringify({
-                        password: password,
+                        password: savedPassword,
                         question: question
                     })
                 });
 
                 const data = await response.json();
+                output.classList.remove("loading");
                 output.textContent = data.answer;
             } catch (error) {
+                output.classList.remove("loading");
                 output.textContent = "Något gick fel. Försök igen.";
             }
         }
+
+        function copyOutput() {
+            const output = document.getElementById("staffOutput").textContent;
+            navigator.clipboard.writeText(output);
+            showToast("AI-svaret kopierades");
+        }
+
+        function clearAll() {
+            document.getElementById("staffQuestion").value = "";
+            document.getElementById("staffOutput").textContent = "AI-svaret visas här...";
+            showToast("Rensat");
+        }
+
+        document.getElementById("loginPassword").addEventListener("keydown", function(event) {
+            if (event.key === "Enter") {
+                unlockDashboard();
+            }
+        });
+
+        window.addEventListener("load", function() {
+            const storedPassword = sessionStorage.getItem("staffPassword");
+            if (storedPassword) {
+                savedPassword = storedPassword;
+                document.getElementById("loginCard").style.display = "none";
+                document.getElementById("dashboard").style.display = "block";
+            }
+        });
     </script>
 </body>
 </html>
 """
 
+
 def looks_like_email(text):
     return re.search(r"[\w\.-]+@[\w\.-]+\.\w+", text) is not None
+
 
 def extract_email(text):
     match = re.search(r"[\w\.-]+@[\w\.-]+\.\w+", text)
     return match.group(0) if match else None
+
 
 def extract_name(text, email):
     name = text.replace(email, "")
@@ -404,6 +960,7 @@ def extract_name(text, email):
         return "Okänt namn"
 
     return name
+
 
 def looks_like_lead_request(text):
     text_lower = text.lower()
@@ -426,6 +983,7 @@ def looks_like_lead_request(text):
         "kan ni höra av er"
     ]
     return any(word in text_lower for word in lead_words)
+
 
 def send_lead_to_google_sheets(customer_message, customer_email):
     if not LEAD_WEBHOOK_URL:
@@ -464,13 +1022,27 @@ def send_lead_to_google_sheets(customer_message, customer_email):
         print("GOOGLE SHEETS ERROR:", str(e))
         return False, str(e)
 
+
 @app.route("/")
 def home():
     return render_template_string(CUSTOMER_HTML)
 
+
 @app.route("/staff")
 def staff():
     return render_template_string(STAFF_HTML)
+
+
+@app.route("/staff-login", methods=["POST"])
+def staff_login():
+    data = request.get_json()
+    password = data.get("password", "")
+
+    if password == STAFF_PASSWORD:
+        return jsonify({"success": True})
+
+    return jsonify({"success": False})
+
 
 @app.route("/ask", methods=["POST"])
 def ask():
@@ -509,6 +1081,7 @@ def ask():
     answer = message.content[0].text
     return jsonify({"answer": answer})
 
+
 @app.route("/staff-ask", methods=["POST"])
 def staff_ask():
     data = request.get_json()
@@ -522,7 +1095,7 @@ def staff_ask():
 
     message = client.messages.create(
         model="claude-sonnet-4-5",
-        max_tokens=700,
+        max_tokens=900,
         system=STAFF_SYSTEM_PROMPT,
         messages=[
             {"role": "user", "content": question}
@@ -531,6 +1104,7 @@ def staff_ask():
 
     answer = message.content[0].text
     return jsonify({"answer": answer})
+
 
 if __name__ == "__main__":
     app.run(debug=True)
