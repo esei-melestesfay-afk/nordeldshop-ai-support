@@ -11,6 +11,8 @@ CORS(app)
 client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
 LEAD_WEBHOOK_URL = os.environ.get("LEAD_WEBHOOK_URL")
+DASHBOARD_WEBHOOK_URL = os.environ.get("DASHBOARD_WEBHOOK_URL")
+DASHBOARD_WEBHOOK_SECRET = os.environ.get("DASHBOARD_WEBHOOK_SECRET")
 STAFF_PASSWORD = os.environ.get("STAFF_PASSWORD", "nordeld2026")
 
 
@@ -1023,6 +1025,41 @@ def send_lead_to_google_sheets(customer_message, customer_email):
         return False, str(e)
 
 
+def send_lead_to_dashboard(customer_message, customer_email):
+    if not DASHBOARD_WEBHOOK_URL or not DASHBOARD_WEBHOOK_SECRET:
+        print("ERROR: Missing dashboard webhook settings")
+        return False, "Missing dashboard webhook settings"
+
+    customer_name = extract_name(customer_message, customer_email)
+
+    lead_data = {
+        "secret": DASHBOARD_WEBHOOK_SECRET,
+        "name": customer_name,
+        "email": customer_email,
+        "message": customer_message,
+        "source": "Nordeldshop AI-chatten"
+    }
+
+    try:
+        response = requests.post(
+            DASHBOARD_WEBHOOK_URL,
+            json=lead_data,
+            timeout=20
+        )
+
+        print("DASHBOARD STATUS:", response.status_code)
+        print("DASHBOARD RESPONSE:", response.text[:500])
+
+        if response.status_code in [200, 201, 202]:
+            return True, "Lead sent to Fostira Dashboard."
+
+        return False, f"Dashboard webhook error: {response.status_code} - {response.text[:200]}"
+
+    except Exception as e:
+        print("DASHBOARD ERROR:", str(e))
+        return False, str(e)
+
+
 @app.route("/")
 def home():
     return render_template_string(CUSTOMER_HTML)
@@ -1051,11 +1088,14 @@ def ask():
 
     if looks_like_email(question):
         customer_email = extract_email(question)
-        success, result = send_lead_to_google_sheets(question, customer_email)
 
-        print("LEAD RESULT:", result)
+        sheets_success, sheets_result = send_lead_to_google_sheets(question, customer_email)
+        dashboard_success, dashboard_result = send_lead_to_dashboard(question, customer_email)
 
-        if success:
+        print("GOOGLE SHEETS RESULT:", sheets_result)
+        print("DASHBOARD RESULT:", dashboard_result)
+
+        if sheets_success or dashboard_success:
             return jsonify({
                 "answer": "Tack! Vi har tagit emot dina uppgifter och återkommer så snart vi kan."
             })
